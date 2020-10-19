@@ -55,6 +55,46 @@ for (i in seq_along(folders2)) {
 getspeech <- function(txt) {
   date <- txt[1]
   date <- sub(" Debate.*", "", date)
+  txt <- paste(txt, collapse = "\n")
+  ### parse data
+  pattern <- "\\\n([[:upper:]]|\\.|\\s)+:"
+  names <- stringr::str_extract_all(txt, pattern)
+  names <- unique(unlist(names))
+  pp <- unlist(strsplit2(txt, 
+                         split = pattern, 
+                         type = "before"))
+  #speaker_num <- length(names)
+  speaker_content <- vector("list", length = length(names))
+  for (i in seq_along(names)) {
+    indx <- grep(names[i], pp, fixed = TRUE)
+    #print(indx)
+    pp_one <- pp[indx]
+    pp_one <- paste(pp_one, collapse = "\n")
+    speaker_content[[i]] <- pp_one
+  }
+  speaker_content <- unlist(speaker_content)
+  #speaker_content <- gsub("00", "\n", speaker_content)
+  speaker_content <- gsub("^\\n", "", speaker_content)
+  speakers <- gsub("\\\n|:", "", names)
+  speeches <- data.frame(speaker = speakers, date = date, content = speaker_content)
+  return(speeches)
+}
+
+all_speeches <- vector("list", length = length(txtall))
+for (i in seq_along(txtall)) {
+  all_speeches[[i]] <- getspeech(txtall[[i]])
+}
+
+all_speeches <- do.call("rbind", all_speeches)
+
+#x <- rjson::toJSON(unname(split(all_speeches, 1:nrow(all_speeches))))
+#x <- jsonify::to_json(all_speeches)
+xlsx::write.xlsx(all_speeches, "debate_data/all_speeches.xlsx")
+saveRDS(all_speeches, "debate_data/all_speeches.rds")
+
+getMFDscore <- function(txt) {
+  date <- txt[1]
+  date <- sub(" Debate.*", "", date)
   txt <- paste(txt, collapse = "00")
   ### parse data
   pattern <- "00([[:upper:]]|\\.|\\s)+:"
@@ -91,7 +131,7 @@ getspeech <- function(txt) {
 
 all_morals <- vector("list", length = length(txtall))
 for (i in seq_along(txtall)) {
-  all_morals[[i]] <- getspeech(txtall[[i]])
+  all_morals[[i]] <- getMFDscore(txtall[[i]])
 }
 
 all_morals <- do.call("rbind", all_morals)
