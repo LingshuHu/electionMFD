@@ -33,6 +33,8 @@ ntR <- subset(nt, party == "R")
 
 ntDR <- ntD[, 3:12] - ntR[, 3:12]
 ntDR <- cbind(ntDR, ntD[, c("year", "round")])
+
+### total difference
 ntDR$total <- apply(ntDR[, 1:10], 1, function(x) sum(abs(x)))
 
 ggplot(ntDR, aes(x = year, y = total)) + geom_point() + geom_smooth(method = lm, formula = "y ~ x + x^2")
@@ -43,6 +45,24 @@ summary(mod)
 
 mod <- lm(scale(total) ~ year, subset(ntDR, year != "2012"))
 summary(mod)
+
+### one difference
+ggplot(ntDR, aes(x = year, y = harm)) + geom_point() + geom_smooth(method = lm, formula = "y ~ x + x^2")
+
+nt$id <- 1:nrow(nt)
+nt_long <- tidyr::gather(nt, key = "moral_dim", value = "loading", 3:12)
+
+ggplot(nt_long, aes(x = year, y = loading, color = party)) + 
+  geom_point() + geom_smooth() + facet_wrap(~moral_dim)
+
+### proportion 
+ntp <- nt
+ntp$sum <- apply(ntp[,3:12], 1, sum) # get moral sum of each round
+ntp[,3:12] <- ntp[,3:12]/ntp$sum # get proportion of each dimention
+ntp_long <- tidyr::gather(ntp, key = "moral_dim", value = "rate", 3:12)
+
+ggplot(ntp_long, aes(x = year, y = rate, color = party)) + 
+  geom_point() + geom_smooth() + facet_wrap(~moral_dim)
 
 ### factor analysis 
 psych::fa.parallel(ntDR[, 1:10],fa='fa')
