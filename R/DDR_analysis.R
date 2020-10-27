@@ -37,14 +37,34 @@ ntDR <- cbind(ntDR, ntD[, c("year", "round")])
 ### total difference
 ntDR$total <- apply(ntDR[, 1:10], 1, function(x) sum(abs(x)))
 
-ggplot(ntDR, aes(x = year, y = total)) + geom_point() + geom_smooth(method = lm, formula = "y ~ x + x^2")
+ggplot(ntDR, aes(x = year, y = total)) + 
+  geom_point(size = 3, color = "gray") + 
+  geom_smooth(method = lm, se = F, size = 1.5, color = "black") +
+  theme_classic() + 
+  scale_x_continuous(breaks=seq(1960,2016,10)) +
+  theme(text = element_text(size = 22),
+        legend.text=element_text(size=18),
+        axis.text.x = element_text(angle = 45, hjust=1)) + 
+  xlab("Year") + ylab("Total Difference") 
+
+
 ggplot(subset(ntDR, year != "2012"), aes(x = year, y = total)) + geom_point() + geom_smooth()
 
-mod <- lm(scale(total) ~ year, ntDR)
-summary(mod)
+## fit regression
+ntDR$year4 <- ntDR$year/4
+mod1 <- lm(total ~ year4, ntDR)
+summary(mod1)
 
-mod <- lm(scale(total) ~ year, subset(ntDR, year != "2012"))
-summary(mod)
+leverages <- hatvalues(mod1) > 2 * mean(hatvalues(mod1))
+ntDR[leverages, ]
+
+library(dplyr)
+dplyr::group_by(ntDR, year) %>% summarise(m = mean(total))
+
+mod2 <- lm(total ~ year4, subset(ntDR, year != "2012"))
+summary(mod2)
+
+anova(mod1, mod2)
 
 ### one difference
 ggplot(ntDR, aes(x = year, y = harm)) + geom_point() + geom_smooth(method = lm, formula = "y ~ x + x^2")
@@ -52,8 +72,66 @@ ggplot(ntDR, aes(x = year, y = harm)) + geom_point() + geom_smooth(method = lm, 
 nt$id <- 1:nrow(nt)
 nt_long <- tidyr::gather(nt, key = "moral_dim", value = "loading", 3:12)
 
+nt_long$moral_dim <- factor(nt_long$moral_dim, levels = as.character(unique(nt_long$moral_dim)))
 ggplot(nt_long, aes(x = year, y = loading, color = party)) + 
-  geom_point() + geom_smooth() + facet_wrap(~moral_dim)
+  geom_point() + geom_smooth(se = F) + 
+  facet_wrap(~moral_dim) +
+  theme_classic() +
+  theme(text = element_text(size = 22),
+        legend.text=element_text(size=18),
+        axis.text.x = element_text(angle = 45, hjust=1)) + 
+  xlab("Year") + ylab("Total Difference") +
+  labs(color = "Party")
+
+ntDR_dim_long <- tidyr::gather(ntDR, key = "moral_dim", value = "loading", 1:10)
+ggplot(ntDR_dim_long, aes(x = year, y = loading)) + 
+  geom_point() + geom_smooth(se = F) + 
+  facet_wrap(~moral_dim) +
+  theme_classic() +
+  theme(text = element_text(size = 22),
+        legend.text=element_text(size=18),
+        axis.text.x = element_text(angle = 45, hjust=1)) + 
+  xlab("Year") + ylab("Total Difference") +
+  labs(color = "Party")
+
+##### test each dimension
+###### use moderation
+morals <- unique(nt_long$moral_dim)
+reg_dim <- vector("list", length = length(morals))
+for (i in seq_along(morals)) {
+  f <- as.formula(paste0(morals[i], "~", "year*party"))
+  m <- lm(f, nt)
+  coe <- summary(m)$coefficients
+  coe <- data.frame(coe, row.names = NULL,
+                    variable = rownames(coe),
+                    moral_dim = morals[i])
+  reg_dim[[i]] <- coe
+}
+
+reg_dim <- do.call("rbind", reg_dim)
+
+sig <- which(reg_dim$Pr...t.. < .05)
+reg_dim[sig, ]
+
+##### use difference
+morals <- unique(nt_long$moral_dim)
+reg_dim2 <- vector("list", length = length(morals))
+for (i in seq_along(morals)) {
+  f <- as.formula(paste0(morals[i], "~", "year"))
+  m <- lm(f, ntDR)
+  coe <- summary(m)$coefficients
+  coe <- data.frame(coe, row.names = NULL,
+                    variable = rownames(coe),
+                    moral_dim = morals[i])
+  reg_dim2[[i]] <- coe
+}
+
+reg_dim2 <- do.call("rbind", reg_dim2)
+
+sig <- which(reg_dim2$Pr...t.. < .05)
+reg_dim2[sig, ]
+
+
 
 ### proportion 
 ntp <- nt
@@ -87,6 +165,7 @@ mlm <- lmerTest::lmer(loading ~ party + moral_dim + party * moral_dim +
                     (1 | year) + (1 | year:round), nt_long)
 ss <- summary(mlm)
 confint(mlm)
+lattice::qqmath(mlm)
 
 ## generate moral differences for nested models
 nt_long$party <- factor(nt_long$party)
