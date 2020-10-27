@@ -35,6 +35,7 @@ ntDR <- ntD[, 3:12] - ntR[, 3:12]
 ntDR <- cbind(ntDR, ntD[, c("year", "round")])
 ntDR$total <- apply(ntDR[, 1:10], 1, function(x) sum(abs(x)))
 
+ggplot(ntDR, aes(x = year, y = total)) + geom_point() + geom_smooth(method = lm, formula = "y ~ x + x^2")
 ggplot(subset(ntDR, year != "2012"), aes(x = year, y = total)) + geom_point() + geom_smooth()
 
 mod <- lm(scale(total) ~ year, ntDR)
@@ -56,11 +57,122 @@ cor(ntDR[, 1:10])
 nt$id <- 1:nrow(nt)
 nt_long <- tidyr::gather(nt, key = "moral_dim", value = "loading", 3:12)
 
+nt_long$party <- factor(nt_long$party)
+nt_long$party <- relevel(nt_long$party, ref = "D")
 nt_long$moral_dim <- factor(nt_long$moral_dim)
-nt_long$moral_dim <- relevel(nt_long$moral_dim, ref = "fairness")
-mlm <- lme4::lmer(loading ~ party + moral_dim + #party * moral_dim + 
+nt_long$moral_dim <- relevel(nt_long$moral_dim, ref = "authority")
+mlm <- lme4::lmer(loading ~ party + moral_dim + party * moral_dim + 
                     (1 | year) + (1 | year:round), nt_long)
-summary(mlm)
+mlm <- lmerTest::lmer(loading ~ party + moral_dim + party * moral_dim + 
+                    (1 | year) + (1 | year:round), nt_long)
+ss <- summary(mlm)
+confint(mlm)
+
+## generate moral differences for nested models
+nt_long$party <- factor(nt_long$party)
+nt_long$party <- relevel(nt_long$party, ref = "R")
+dim_diffR <- vector("list", length = length(unique(nt_long$moral_dim)))
+for (i in seq_along(unique(nt_long$moral_dim))) {
+  # choose a moral dimention
+  morals <- as.character(unique(nt_long$moral_dim))
+  nt_long$moral_dim <- relevel(nt_long$moral_dim, 
+                               ref = morals[i])
+  # run model
+  mlm <- lme4::lmer(loading ~ party + moral_dim + party * moral_dim + 
+                      (1 | year) + (1 | year:round), nt_long)
+  coe <- summary(mlm)$coefficients
+  ci <- confint(mlm)[4:5, ]
+  coe <- data.frame(coe, 
+                    moral_dim = morals[i], 
+                    party = row.names(coe),
+                    row.names = NULL, stringsAsFactors = F)
+  # calculate party means
+  #coe[2, 1] <-  coe[2, 1] + coe[1, 1]
+  coe$party <- gsub("(Intercept)", "partyR", fixed = TRUE, coe$party)
+  coe <- cbind(coe[1:2,], ci)
+  dim_diffR[[i]] <- coe
+}
+
+dim_diffR <- do.call("rbind", dim_diffR)
+
+## another party
+nt_long$party <- factor(nt_long$party)
+nt_long$party <- relevel(nt_long$party, ref = "D")
+dim_diffD <- vector("list", length = length(unique(nt_long$moral_dim)))
+for (i in seq_along(unique(nt_long$moral_dim))) {
+  # choose a moral dimention
+  morals <- as.character(unique(nt_long$moral_dim))
+  nt_long$moral_dim <- relevel(nt_long$moral_dim, 
+                               ref = morals[i])
+  # run model
+  mlm <- lme4::lmer(loading ~ party + moral_dim + party * moral_dim + 
+                      (1 | year) + (1 | year:round), nt_long)
+  coe <- summary(mlm)$coefficients
+  ci <- confint(mlm)[4:5, ]
+  coe <- data.frame(coe, 
+                    moral_dim = morals[i], 
+                    party = row.names(coe),
+                    row.names = NULL, stringsAsFactors = F)
+  # calculate party means
+  #coe[2, 1] <-  coe[2, 1] + coe[1, 1]
+  coe$party <- gsub("(Intercept)", "partyD", fixed = TRUE, coe$party)
+  coe <- cbind(coe[1:2,], ci)
+  dim_diffD[[i]] <- coe
+}
+
+dim_diffD <- do.call("rbind", dim_diffD)
+
+diff_sig <- subset(dim_diffR, party == "partyD")
+diff_sig <- subset(diff_sig, (`2.5 %` > 0 & `97.5 %` >0)|(`2.5 %` < 0 & `97.5 %` < 0))
+
+dim_diffDD <- subset(dim_diffD, party == "partyD")
+dim_diffRR <- subset(dim_diffR, party == "partyR")
+
+dim_diff <- rbind(dim_diffDD, dim_diffRR)
+dim_diff <- dplyr::mutate(dim_diff,
+  moral_dim = ifelse(dim_diff$moral_dim %in% diff_sig$moral_dim, 
+                     paste0(dim_diff$moral_dim, "*"), dim_diff$moral_dim)
+  )
+
+t.value <- dim_diff$t.value
+pt(-2.593, 640-7, lower.tail = TRUE)*2
+
+dim_diff_wide <- tidyr::spread(dim_diff[, c("Estimate", "moral_dim", "party")], 
+                               key = party, value = Estimate)
+
+write.csv(dim_diff, "results/dim_diff_party.csv")
+write.csv(dim_diff_wide, "results/dim_diff_party.csv")
+
+D_care_mean <- mean(subset(nt_long, party == "D" & moral_dim == "care")$loading)
+R_care_mean <- mean(subset(nt_long, party == "R" & moral_dim == "care")$loading)
+
+sd(subset(nt_long, party == "D" & moral_dim == "care")$loading)
+sd(subset(nt_long, party == "D" & moral_dim == "harm")$loading)
+
+
+## plot moral differences between parties
+colnames(dim_diff) <- c("Estimate", "SD", "t.value", "moral_dim", "party", "CIlow", "CIhigh")
+dim_diff$moral_dim <- factor(dim_diff$moral_dim, levels = as.character(unique(dim_diff$moral_dim)))
+dim_diff$party <- factor(dim_diff$party, levels = c("partyR", "partyD"))
+
+ggplot(dim_diff, aes(x = moral_dim, y = Estimate, fill = party)) + 
+  geom_bar(stat="identity", position = "dodge") +
+  geom_errorbar(aes(ymin=CIlow, ymax=CIhigh), width=.5,
+                position=position_dodge(.9)) +
+  theme_classic() + 
+  theme(text = element_text(size = 22),
+        legend.text=element_text(size=18),
+        axis.text.x = element_text(angle = 45, hjust=1)) + 
+  xlab("Moral Dimension") + ylab("Moral Loading") +
+  labs(fill = "Party")
+
+#coe <- coef(mlm)
+#mean(coe[[1]]$partyD)
+#mean(coe[[1]]$`(Intercept)`)
+
+VarCorr(mlm)
+confint(mlm)
+
 sjstats::icc(mlm)
 performance::icc(mlm)
 # get icc
