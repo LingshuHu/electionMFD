@@ -87,15 +87,22 @@ ggplot(nt_long, aes(x = year, y = loading, color = party)) +
 
 # show difference score
 ntDR_dim_long <- tidyr::gather(ntDR, key = "moral_dim", value = "loading", 1:10)
-ggplot(ntDR_dim_long, aes(x = year, y = loading)) + 
-  geom_point() + geom_smooth(se = F) + 
+ntDR_dim_long$moral_dim <- factor(ntDR_dim_long$moral_dim, levels = as.character(unique(ntDR_dim_long$moral_dim)))
+ggplot(ntDR_dim_long, aes(x = year, y = abs(loading), color = round)) + 
+  geom_point() + geom_smooth(se = F, method = "lm", formula = "y ~ x", color = "black") + 
   facet_wrap(~moral_dim) +
   theme_classic() +
   theme(text = element_text(size = 22),
         legend.text=element_text(size=18),
         axis.text.x = element_text(angle = 45, hjust=1)) + 
   xlab("Year") + ylab("Total Difference") +
-  labs(color = "Party")
+  labs(color = "Round")
+
+#### regression on each dimension
+ntDR_dim_long$year4 <- ntDR_dim_long$year/4
+emod <- lm(loading ~ year4, subset(ntDR_dim_long, moral_dim == "subversion" & !year %in% c(2004, 2008, 2012)))
+
+summary(emod)
 
 ##### test each dimension
 ###### use moderation
@@ -154,7 +161,22 @@ print(mod.f$loadings,sort=T,cut=.3)
 
 ### correllation 
 cor(ntDR[, 1:10])
+cc <- cor(nt[, 3:12])
+which(cc == min(cc))
+cc[30,93]
+#correlation between two parties
+cor.test(subset(nt_long, party == "D")$loading, subset(nt_long, party == "R")$loading)
 
+DD <- subset(nt_long, party == "D")
+RR <- subset(nt_long, party == "R")
+DDRR <- cbind(DD, loadingR = RR$loading)
+
+mlmc <- lme4::lmer(scale(loading)~scale(loadingR) + 
+                     (1 | year), 
+                   #control=lmerControl(optimizer="Nelder_Mead", optCtrl=list(maxfun=2e5)), 
+                                        DDRR)
+summary(mlmc)
+confint(mlmc)
 ### MLM
 nt$id <- 1:nrow(nt)
 nt_long <- tidyr::gather(nt, key = "moral_dim", value = "loading", 3:12)
@@ -204,7 +226,7 @@ swith_factor_model <- function(data, formula, dims, refparty) {
 ## based on value difference
 dim_diffR <- swith_factor_model(
   nt_long, 
-  formula = "loading ~ party + moral_dim + party * moral_dim + (1 | year) + (1 | year:round)",
+  formula = "scale(loading) ~ party + moral_dim + party * moral_dim + (1 | year) + (1 | year:round)",
   dims = as.character(unique(nt_long$moral_dim)),
   refparty = "R")
 
