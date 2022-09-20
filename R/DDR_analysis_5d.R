@@ -24,7 +24,14 @@ summary(mod)
 
 ############## use nested data ###############
 nt <- read.csv("debate_data/DDR_results_nested.csv", stringsAsFactors = F) ## included 2020 data
-colnames(nt)[11] <- "sanctity"
+
+nt$care <- nt$care+nt$harm
+nt$fairness <- nt$fairness+nt$cheating
+nt$authority <- nt$authority+nt$subversion
+nt$loyalty <- nt$loyalty+nt$betrayal
+nt$purity <- nt$purity+nt$degradation
+
+nt <- nt[, c(1:3, 5, 7, 9, 11)]
 #nt <- tidyr::separate(nt, ID, into = c("party", "round"), sep = "[A_Z]")
 nt$party <- sub("[1-9]", "", nt$ID)
 nt$round <- sub("[A-Z]", "", nt$ID)
@@ -32,11 +39,11 @@ nt$round <- sub("[A-Z]", "", nt$ID)
 ntD <- subset(nt, party == "D")
 ntR <- subset(nt, party == "R")
 
-ntDR <- ntD[, 3:12] - ntR[, 3:12]
+ntDR <- ntD[, 3:7] - ntR[, 3:7]
 ntDR <- cbind(ntDR, ntD[, c("year", "round")])
 
 ### total difference
-ntDR$total <- apply(ntDR[, 1:10], 1, function(x) sum(abs(x)))
+ntDR$total <- apply(ntDR[, 1:5], 1, function(x) sum(abs(x)))
 
 ggplot(ntDR, aes(x = year, y = total, color = round)) + 
   geom_point(size = 3) + 
@@ -73,11 +80,11 @@ ggplot(ntDR, aes(x = year, y = harm)) + geom_point() + geom_smooth(method = lm, 
 
 # show interaction
 nt$id <- 1:nrow(nt)
-nt_long <- tidyr::gather(nt, key = "moral_dim", value = "loading", 3:12)
+nt_long <- tidyr::gather(nt, key = "moral_dim", value = "loading", 3:7)
 nt_long$party <- factor(nt_long$party, levels = c("R", "D"))
 nt_long$moral_dim <- factor(nt_long$moral_dim, levels = as.character(unique(nt_long$moral_dim)))
 ggplot(nt_long, aes(x = year, y = loading, color = party)) + 
-  geom_point() + geom_smooth(se = F) + 
+  geom_point() + geom_smooth(se = F, method = "lm", formula = "y~x") + 
   facet_wrap(~moral_dim) +
   theme_classic() +
   theme(text = element_text(size = 22),
@@ -87,7 +94,7 @@ ggplot(nt_long, aes(x = year, y = loading, color = party)) +
   labs(color = "Party")
 
 # show difference score
-ntDR_dim_long <- tidyr::gather(ntDR, key = "moral_dim", value = "loading", 1:10)
+ntDR_dim_long <- tidyr::gather(ntDR, key = "moral_dim", value = "loading", 1:5)
 ntDR_dim_long$moral_dim <- factor(ntDR_dim_long$moral_dim, levels = as.character(unique(ntDR_dim_long$moral_dim)))
 ggplot(ntDR_dim_long, aes(x = year, y = abs(loading), color = round)) + 
   geom_point() + geom_smooth(se = F, method = "lm", formula = "y ~ x", color = "black") + 
@@ -110,10 +117,9 @@ summary(emod)
 morals <- unique(nt_long$moral_dim)
 reg_dim <- vector("list", length = length(morals))
 for (i in seq_along(morals)) {
-  dv <- paste0("scale(", morals[i], ")")
-  f <- as.formula(paste0(dv, "~ year*party"))
+  f <- as.formula(paste0(morals[i], "~", "year*party"))
   #m <- lm(f, nt)
-  m <- lm(f, nt)#subset(nt, !year %in% c("2004", "2008", "2012")))
+  m <- lm(f, subset(nt, !year %in% c("2004", "2008", "2012")))
   coe <- summary(m)$coefficients
   coe <- data.frame(coe, row.names = NULL,
                     variable = rownames(coe),
@@ -130,8 +136,7 @@ reg_dim[sig, ]
 morals <- unique(nt_long$moral_dim)
 reg_dim2 <- vector("list", length = length(morals))
 for (i in seq_along(morals)) {
-  dv <- paste0("scale(", morals[i], ")")
-  f <- as.formula(paste0(dv, "~ year"))
+  f <- as.formula(paste0(morals[i], "~", "year"))
   m <- lm(f, ntDR)
   coe <- summary(m)$coefficients
   coe <- data.frame(coe, row.names = NULL,
@@ -189,7 +194,7 @@ nt_long$party <- relevel(nt_long$party, ref = "D")
 nt_long$moral_dim <- factor(nt_long$moral_dim)
 nt_long$moral_dim <- relevel(nt_long$moral_dim, ref = "authority")
 mlm <- lme4::lmer(loading ~ party + moral_dim + party * moral_dim + 
-                    (1 | year) + (1 | year:round), nt_long) ## use this one
+                    (1 | year) + (1 | year:round), nt_long)
 mlm <- lmerTest::lmer(loading ~ party + moral_dim + party * moral_dim + 
                     (1 | year) + (1 | year:round), nt_long)
 ss <- summary(mlm)
@@ -229,13 +234,9 @@ swith_factor_model <- function(data, formula, dims, refparty) {
 ## based on value difference
 dim_diffR <- swith_factor_model(
   nt_long, 
-  formula = "loading ~ party + moral_dim + party * moral_dim + (1 | year) + (1 | year:round)",
+  formula = "scale(loading) ~ party + moral_dim + party * moral_dim + (1 | year) + (1 | year:round)",
   dims = as.character(unique(nt_long$moral_dim)),
   refparty = "R")
-# this table shows Democrats generally had significantly higher moral loadings on 
-# care (b = .013, 95%CI = [.007, .019]), fairness (b = .013, 95%CI = [.007, .019]), 
-# authority (b = .014, 95%CI = [.008, .020]), and loyalty (b = .016, 95%CI = [.010, .022]), 
-# but lower loading on degradation (b = -.007, 95%CI = [-.013, -.001]).
 
 dim_diffD <- swith_factor_model(
   nt_long, 
@@ -290,7 +291,7 @@ dim_pdiff <- dplyr::mutate(dim_pdiff,
 dim_diff_wide <- tidyr::spread(dim_diff[, c("Estimate", "moral_dim", "party")], 
                                key = party, value = Estimate)
 
-write.csv(dim_diff, "results/dim_diff_party_2020.csv")
+write.csv(dim_diff, "results/dim_diff_party.csv")
 write.csv(dim_diff_wide, "results/dim_diff_party.csv")
 
 D_care_mean <- mean(subset(nt_long, party == "D" & moral_dim == "care")$loading)
@@ -333,7 +334,7 @@ ggplot(dim_pdiff, aes(x = moral_dim, y = Estimate, fill = party)) +
   labs(fill = "Party")
 
 ## effects of round
-mlm2 <- lme4::lmer(total~ round + (1|year), ntDR)
+mlm2 <- lme4::lmer(total~ round + (1|year), ntDR_long)
 summary(mlm2)
 confint(mlm2)
 performance::icc(mlm2)
@@ -353,7 +354,7 @@ performance::icc(mlm)
 
 alpha <- lme4::getME(mlm, "sigma")^2 # invividual variance
 
-vars <- lme4::VarCorr(mlm)
+vars <- VarCorr(mlm)
 var_l2 <- vars[[1]][1]
 var_l3 <- vars[[2]][1]
 
