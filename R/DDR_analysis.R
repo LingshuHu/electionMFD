@@ -193,7 +193,12 @@ mlm <- lme4::lmer(loading ~ party + moral_dim + party * moral_dim +
 mlm <- lmerTest::lmer(loading ~ party + moral_dim + party * moral_dim + 
                     (1 | year) + (1 | year:round), nt_long)
 ss <- summary(mlm)
-confint(mlm)
+write.csv(ss$coefficients, "results/coefficients_of_MLM1.csv")
+ci <- confint(mlm)
+ci <- as.data.frame(ci)
+ci$CI <- paste(round(ci$`2.5 %`,3), round(ci$`97.5 %`, 3), sep = ", ")
+ci$CI <- gsub("0.", ".", ci$CI, fixed = T)
+write.csv(ci, "results/coefficients_CI_of_MLM1.csv")
 lattice::qqmath(mlm)
 
 ## generate moral differences for nested models
