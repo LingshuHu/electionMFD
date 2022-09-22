@@ -198,6 +198,7 @@ ci <- confint(mlm)
 ci <- as.data.frame(ci)
 ci$CI <- paste(round(ci$`2.5 %`,3), round(ci$`97.5 %`, 3), sep = ", ")
 ci$CI <- gsub("0.", ".", ci$CI, fixed = T)
+ci$CI <- paste0("[", ci$CI, "]")
 write.csv(ci, "results/coefficients_CI_of_MLM1.csv")
 lattice::qqmath(mlm)
 
